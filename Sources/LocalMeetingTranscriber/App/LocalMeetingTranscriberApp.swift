@@ -28,6 +28,9 @@ struct RootView: View {
                     LiveView()
                 }
             }
+            Tab("履歴", systemImage: "clock.arrow.circlepath") {
+                MeetingsView()
+            }
             Tab("診断", systemImage: "stethoscope") {
                 NavigationStack {
                     DiagnosticsView()
