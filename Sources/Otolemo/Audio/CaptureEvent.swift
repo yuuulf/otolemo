@@ -52,6 +52,40 @@ extension AVAudioPCMBuffer {
         }
         return copy
     }
+
+    /// 最初のチャンネルだけをモノラル（Float32）にコピーする。
+    ///
+    /// 内蔵マイクは音声処理の有無で 3ch や 7ch の「個別チャンネル」として届く。
+    /// これを AVAudioConverter でモノラルへまとめると無音になるため、先に1チャンネルにする。
+    /// （音声処理ありでは全チャンネルが同じ内容になる。）
+    static func copyingFirstChannel(_ readOnly: AVReadOnlyAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let format = readOnly.format
+        guard format.channelCount > 1 else { return copying(readOnly) }
+        let frames = AVAudioFrameCount(readOnly.frameLength)
+        guard frames > 0,
+              format.commonFormat == .pcmFormatFloat32,
+              let mono = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 1),
+              let copy = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: frames),
+              let destination = copy.floatChannelData?[0] else {
+            return nil
+        }
+        copy.frameLength = frames
+        let channels = Int(format.channelCount)
+        let interleaved = format.isInterleaved
+        unsafe readOnly.withUnsafeAudioBufferList { list in
+            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: list))
+            guard let data = buffers.first?.mData else { return }
+            let samples = data.assumingMemoryBound(to: Float.self)
+            if interleaved {
+                for frame in 0..<Int(frames) {
+                    destination[frame] = samples[frame * channels]
+                }
+            } else {
+                destination.update(from: samples, count: Int(frames))
+            }
+        }
+        return copy
+    }
 }
 
 extension AVAudioTime {

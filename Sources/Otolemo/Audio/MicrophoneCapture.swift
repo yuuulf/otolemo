@@ -193,7 +193,7 @@ final class MicrophoneCapture {
         queue: AudioBufferQueue<CaptureEvent>
     ) -> @Sendable (AVReadOnlyAudioPCMBuffer, AVAudioTime) -> Void {
         { buffer, time in
-            guard let copy = AVAudioPCMBuffer.copying(buffer) else { return }
+            guard let copy = AVAudioPCMBuffer.copyingFirstChannel(buffer) else { return }
             queue.enqueue(.audio(CapturedAudio(buffer: copy, hostTime: time.hostTimeOrNow)))
         }
     }
