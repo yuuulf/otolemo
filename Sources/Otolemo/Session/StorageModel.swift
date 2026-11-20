@@ -21,6 +21,9 @@ final class StorageModel {
 
     func open() {
         do {
+            if try paths.migrateLegacyDirectoryIfNeeded() {
+                Log.storage.info("Moved data from the legacy folder")
+            }
             try paths.createDirectories()
             repository = try MeetingRepository(url: paths.databaseURL)
             openError = nil

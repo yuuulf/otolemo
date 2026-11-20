@@ -2,11 +2,11 @@ import SwiftUI
 import TranscriberCore
 
 @main
-struct LocalMeetingTranscriberApp: App {
+struct OtolemoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup("Local Meeting Transcriber") {
+        WindowGroup("Otolemo") {
             RootView()
                 .environment(appDelegate.models)
                 .environment(appDelegate.network)

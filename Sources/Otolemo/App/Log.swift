@@ -3,7 +3,7 @@ import Synchronization
 
 /// ログの出し先。生音声や文字起こし本文はログに出さない（出す場合も `privacy: .private`）。
 enum Log {
-    static let subsystem = "io.github.yuuulf.LocalMeetingTranscriber"
+    static let subsystem = "io.github.yuuulf.Otolemo"
 
     static let audio = Logger(subsystem: subsystem, category: "audio")
     static let recognition = Logger(subsystem: subsystem, category: "recognition")

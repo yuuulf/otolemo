@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ja</string>
 	<key>CFBundleDisplayName</key>
-	<string>Local Meeting Transcriber</string>
+	<string>Otolemo</string>
 	<key>CFBundleExecutable</key>
-	<string>LocalMeetingTranscriber</string>
+	<string>Otolemo</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.yuuulf.LocalMeetingTranscriber</string>
+	<string>io.github.yuuulf.Otolemo</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LocalMeetingTranscriber</string>
+	<string>Otolemo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

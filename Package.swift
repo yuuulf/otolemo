@@ -3,12 +3,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalMeetingTranscriber",
+    name: "Otolemo",
     platforms: [
         .macOS("27.0")
     ],
     products: [
-        .executable(name: "LocalMeetingTranscriber", targets: ["LocalMeetingTranscriber"])
+        .executable(name: "Otolemo", targets: ["Otolemo"])
     ],
     targets: [
         .target(
@@ -18,7 +18,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "LocalMeetingTranscriber",
+            name: "Otolemo",
             dependencies: ["TranscriberCore"]
         ),
         .testTarget(

@@ -67,7 +67,7 @@ final class ProcessAudioCapture {
         let system = AudioHardwareSystem.shared
 
         let description = CATapDescription(stereoMixdownOfProcesses: target.processObjectIDs)
-        description.name = "LocalMeetingTranscriber: \(target.name)"
+        description.name = "Otolemo: \(target.name)"
         description.uuid = UUID()
         description.isPrivate = true
         description.muteBehavior = .unmuted
@@ -95,7 +95,7 @@ final class ProcessAudioCapture {
             throw CaptureError.aggregateDeviceFailed("出力デバイスが見つかりません")
         }
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "LocalMeetingTranscriber Tap",
+            kAudioAggregateDeviceNameKey: "Otolemo Tap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,

@@ -1,6 +1,6 @@
-# otolemo
+# Otolemo
 
-Zoom / Google Meet の会議を、端末内だけで日本語文字起こしする自分用の macOS アプリ（Local Meeting Transcriber）。
+Zoom / Google Meet の会議を、端末内だけで日本語文字起こしする自分用の macOS アプリ。
 自分のマイクと相手側（会議アプリの出力音声）を別々に取得し、音声・文字起こし・検索データは外部に送信しない。
 
 ## 動作環境
@@ -11,8 +11,8 @@ Zoom / Google Meet の会議を、端末内だけで日本語文字起こしす�
 ## ビルドと起動
 
 ```sh
-scripts/build-app.sh        # build/LocalMeetingTranscriber.app を作る（release）
-open build/LocalMeetingTranscriber.app
+scripts/build-app.sh        # build/Otolemo.app を作る（release）
+open build/Otolemo.app
 ```
 
 マイクと音声キャプチャの権限は `.app` として起動したときに求められる。`swift run` だとターミナル側の権限で動くため、権限確認には使わない。
@@ -47,7 +47,7 @@ Command Line Tools だけの環境では SwiftUI のマクロプラグインが�
 
 ### 3. 保存
 
-- 確定した発言は、その都度 `~/Library/Application Support/LocalMeetingTranscriber/meetings.sqlite`（SQLite / WAL）に保存する。暫定テキストは保存しない。
+- 確定した発言は、その都度 `~/Library/Application Support/Otolemo/meetings.sqlite`（SQLite / WAL）に保存する。暫定テキストは保存しない。改名前の `LocalMeetingTranscriber` フォルダがあれば、初回起動時に `Otolemo` へ移す。
 - 録音中にアプリを終了すると、残りを確定・保存してから終わる。
 - 強制終了やクラッシュで記録中のまま残った会議は、次回起動時に「中断」として最後の発言まで復元する。
 - スリープから復帰すると、動いていた系統を作り直して記録を続ける（スリープ中は記録されない）。
@@ -65,7 +65,7 @@ Command Line Tools だけの環境では SwiftUI のマクロプラグインが�
 - 入力マイク、認識エンジン（`SpeechTranscriber` / `DictationTranscriber`）、モデル状態。
 - 保存場所の表示、手動バックアップ（`Backups/` に SQLite ファイルを作る）、バックアップからの復元（復元前に現在のデータを自動でバックアップする）。
 - デバッグ用の音声保存（既定 OFF、`DebugAudio/` に会議・系統ごとの CAF を保存）と保存期間・一括削除。
-- 詳細ログ。ON でも音声や文字起こし本文はログに出さない。ログは `log stream --predicate 'subsystem == "io.github.yuuulf.LocalMeetingTranscriber"'` で見られる。
+- 詳細ログ。ON でも音声や文字起こし本文はログに出さない。ログは `log stream --predicate 'subsystem == "io.github.yuuulf.Otolemo"'` で見られる。
 
 ## 検証結果（2026-11-20、MacBook Air M5 / macOS 27.0.1）
 

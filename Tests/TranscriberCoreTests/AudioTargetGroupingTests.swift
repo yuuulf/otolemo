@@ -7,7 +7,7 @@ struct AudioTargetGroupingTests {
         RunningAppInfo(pid: 100, bundleID: "com.google.Chrome", name: "Google Chrome"),
         RunningAppInfo(pid: 200, bundleID: "us.zoom.xos", name: "zoom.us"),
         RunningAppInfo(pid: 300, bundleID: "com.apple.TextEdit", name: "テキストエディット"),
-        RunningAppInfo(pid: 999, bundleID: "io.github.yuuulf.LocalMeetingTranscriber", name: "Local Meeting Transcriber")
+        RunningAppInfo(pid: 999, bundleID: "io.github.yuuulf.Otolemo", name: "Otolemo")
     ]
 
     @Test func groupsChromeHelpersUnderChromeByParentProcess() throws {
@@ -48,7 +48,7 @@ struct AudioTargetGroupingTests {
 
     @Test func excludesOwnProcessAndItsChildren() {
         let processes = [
-            AudioProcessInfo(objectID: 41, pid: 999, bundleID: "io.github.yuuulf.LocalMeetingTranscriber", isRunningOutput: true),
+            AudioProcessInfo(objectID: 41, pid: 999, bundleID: "io.github.yuuulf.Otolemo", isRunningOutput: true),
             AudioProcessInfo(objectID: 42, pid: 1_000, bundleID: nil, isRunningOutput: true, ancestorPIDs: [999])
         ]
         let targets = AudioTargetGrouping.targets(processes: processes, runningApps: apps, excludingPID: 999)
