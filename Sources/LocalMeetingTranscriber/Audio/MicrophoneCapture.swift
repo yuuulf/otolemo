@@ -35,6 +35,8 @@ final class MicrophoneCapture {
     private var queue: AudioBufferQueue<CaptureEvent>?
     private var preferredDeviceUID: String?
     private var configurationObserver: (any NSObjectProtocol)?
+    /// タップを入れたか。未使用のエンジンで `inputNode` に触れると入力ユニットが初期化されてしまうため。
+    private var isTapInstalled = false
 
     /// 再接続に失敗したときに呼ばれる。
     var onFailure: ((any Error) -> Void)?
@@ -67,8 +69,7 @@ final class MicrophoneCapture {
             NotificationCenter.default.removeObserver(configurationObserver)
         }
         configurationObserver = nil
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        stopEngine()
         queue?.finish()
         queue = nil
         activeDeviceName = nil
@@ -87,6 +88,7 @@ final class MicrophoneCapture {
         }
         do {
             try input.installAudioTap(onBus: 0, bufferSize: 4_096, format: format, tapProvider: Self.makeTapProvider(queue: queue))
+            isTapInstalled = true
         } catch {
             throw CaptureError.engineStartFailed(error.localizedDescription)
         }
@@ -94,10 +96,17 @@ final class MicrophoneCapture {
         do {
             try engine.start()
         } catch {
-            input.removeTap(onBus: 0)
+            stopEngine()
             throw CaptureError.engineStartFailed(error.localizedDescription)
         }
         Log.audio.info("Microphone started: \(format.sampleRate, privacy: .public) Hz, \(format.channelCount, privacy: .public) ch")
+    }
+
+    private func stopEngine() {
+        guard isTapInstalled else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        isTapInstalled = false
     }
 
     /// 指定のマイクを使う。見つからなければシステムの既定の入力を使う。
@@ -143,8 +152,7 @@ final class MicrophoneCapture {
     private func restartAfterConfigurationChange() {
         guard let queue else { return }
         Log.audio.info("Audio engine configuration changed; restarting microphone")
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        stopEngine()
         queue.enqueue(.discontinuity)
         do {
             try startEngine(queue: queue)
