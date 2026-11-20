@@ -113,9 +113,14 @@ struct LiveView: View {
                     }
                 }
                 if let notice = session.notices[source] {
-                    Label(notice, systemImage: "info.circle")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Label(notice, systemImage: "info.circle")
+                        Button("閉じる", systemImage: "xmark") { session.clearNotice(source) }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 }
             }
         }

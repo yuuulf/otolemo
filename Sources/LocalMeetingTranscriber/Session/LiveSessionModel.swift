@@ -204,19 +204,6 @@ final class LiveSessionModel {
         notices[source] = nil
     }
 
-    /// 確定済みの発言の本文を修正する（ライブ中・終了後の両方）。
-    func edit(_ segment: TranscriptSegment, text: String) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        var edited = segment
-        edited.editedText = trimmed.isEmpty || trimmed == segment.originalText ? nil : trimmed
-        merger?.replace(edited)
-        do {
-            try await storage.repository?.updateEditedText(segmentID: segment.id, editedText: edited.editedText)
-        } catch {
-            saveError = "修正を保存できませんでした: \(error.localizedDescription)"
-        }
-    }
-
     static func defaultTitle(for date: Date) -> String {
         "会議 " + date.formatted(date: .numeric, time: .shortened)
     }
