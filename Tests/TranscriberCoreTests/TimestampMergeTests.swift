@@ -160,3 +160,31 @@ struct ElapsedTimeFormatTests {
         #expect(ElapsedTimeFormat.string(duration: .seconds(65)) == "00:01:05")
     }
 }
+
+struct LatencyStatsTests {
+    @Test func computesMeanAndP95() {
+        var stats = LatencyStats(window: 100)
+        for value in 1...100 {
+            stats.record(milliseconds: Int64(value * 10))
+        }
+        #expect(stats.mean == 505)
+        #expect(stats.p95 == 950)
+        #expect(stats.totalCount == 100)
+    }
+
+    @Test func keepsOnlyRecentWindow() {
+        var stats = LatencyStats(window: 2)
+        stats.record(milliseconds: 10_000)
+        stats.record(milliseconds: 100)
+        stats.record(milliseconds: 300)
+        #expect(stats.samples == [100, 300])
+        #expect(stats.mean == 200)
+        #expect(stats.totalCount == 3)
+    }
+
+    @Test func emptyHasNoValues() {
+        let stats = LatencyStats()
+        #expect(stats.mean == nil)
+        #expect(stats.p95 == nil)
+    }
+}

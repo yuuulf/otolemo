@@ -97,6 +97,12 @@ final class SpeechModelManager {
             return status
         }
         status.locale = locale
+        // 導入済みでも AssetInventory が `supported` を返すことがあるため、導入済みロケールも見る。
+        let installed = await kind.installedLocales()
+        if installed.contains(where: { $0.identifier(.bcp47) == locale.identifier(.bcp47) }) {
+            status.installation = .installed
+            return status
+        }
         let module = kind.makeLiveModule(locale: locale)
         status.installation = switch await AssetInventory.status(forModules: [module]) {
         case .unsupported: .unsupported
