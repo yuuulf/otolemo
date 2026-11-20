@@ -9,6 +9,7 @@ struct LiveView: View {
 
     @ViewState private var title = ""
     @ViewState private var microphones: [AudioInputDevice] = []
+    @ViewState private var targets: [AudioTargetApp] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,9 +21,18 @@ struct LiveView: View {
         }
         .navigationTitle("ライブ")
         .task {
-            microphones = AudioDevices.inputDevices()
+            refreshDevices()
             await models.refresh()
         }
+    }
+
+    private func refreshDevices() {
+        microphones = AudioDevices.inputDevices()
+        targets = AudioProcessList.targets()
+    }
+
+    private var selectedTarget: AudioTargetApp? {
+        targets.first { $0.id == settings.targetID }
     }
 
     // MARK: - 操作
@@ -34,26 +44,41 @@ struct LiveView: View {
                 TextField("会議タイトル（空欄なら日時）", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .disabled(session.phase != .idle)
-                RecordButton()
+                RecordButton(title: title, target: selectedTarget)
             }
             HStack {
+                Picker("相手側", selection: $settings.targetID) {
+                    Text("なし（マイクのみ）").tag(String?.none)
+                    ForEach(targets) { target in
+                        Text(target.isPlayingAudio ? "\(target.name) ♪" : target.name).tag(Optional(target.id))
+                    }
+                }
+                .frame(maxWidth: 320)
+                Toggle("自分のマイク", isOn: $settings.useMicrophone)
                 Picker("マイク", selection: $settings.microphoneUID) {
                     Text("システムの既定").tag(String?.none)
                     ForEach(microphones) { device in
                         Text(device.name).tag(Optional(device.uid))
                     }
                 }
-                .frame(maxWidth: 320)
-                .disabled(session.phase != .idle)
-                Button("更新", systemImage: "arrow.clockwise") {
-                    microphones = AudioDevices.inputDevices()
-                }
-                .labelStyle(.iconOnly)
+                .labelsHidden()
+                .frame(maxWidth: 220)
+                .disabled(!settings.useMicrophone)
+                Button("更新", systemImage: "arrow.clockwise", action: refreshDevices)
+                    .labelStyle(.iconOnly)
+                    .help("アプリとマイクの一覧を更新")
+            }
+            .disabled(session.phase != .idle)
+            HStack {
+                Text("相手側はアプリの出力全体を取得します（通知音や別タブの音声も含まれます）。♪ は音声を再生中のアプリです。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 ModelStatusLabel(status: models.status(for: settings.recognizer), kind: settings.recognizer)
             }
             VStack {
                 LevelMeterView(label: AudioSource.microphone.displayName, level: session.metrics[.microphone]?.level ?? 0, tint: AudioSource.microphone.tint)
+                LevelMeterView(label: AudioSource.system.displayName, level: session.metrics[.system]?.level ?? 0, tint: AudioSource.system.tint)
             }
             .padding(.top, 4)
         }
@@ -67,6 +92,11 @@ struct LiveView: View {
             }
             if let message = session.errorMessage {
                 ErrorRow(message: message, retry: nil)
+            }
+            if session.activeSources.contains(.system), let silent = session.metrics[.system]?.silentSeconds, silent > 30 {
+                Label("相手側の音声が \(Int(silent)) 秒以上無音です。対象アプリと「画面収録とシステムオーディオ録音」の許可を確認してください。", systemImage: "speaker.slash")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
             }
             ForEach(AudioSource.allCases) { source in
                 if let message = session.sourceErrors[source] {
@@ -88,6 +118,9 @@ struct LiveView: View {
 
 /// 録音の開始/停止ボタン。
 private struct RecordButton: View {
+    let title: String
+    let target: AudioTargetApp?
+
     @Environment(LiveSessionModel.self) private var session
     @Environment(AppSettings.self) private var settings
     @Environment(SpeechModelManager.self) private var models
@@ -99,7 +132,7 @@ private struct RecordButton: View {
                 Task { await session.start(configuration) }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!models.status(for: settings.recognizer).isReady)
+            .disabled(!models.status(for: settings.recognizer).isReady || (!settings.useMicrophone && target == nil))
         case .starting:
             ProgressView()
                 .controlSize(.small)
@@ -120,8 +153,10 @@ private struct RecordButton: View {
 
     private var configuration: SessionConfiguration {
         SessionConfiguration(
-            title: "",
+            title: title,
+            useMicrophone: settings.useMicrophone,
             microphoneUID: settings.microphoneUID,
+            target: target,
             recognizer: settings.recognizer,
             saveDebugAudio: settings.saveDebugAudio
         )

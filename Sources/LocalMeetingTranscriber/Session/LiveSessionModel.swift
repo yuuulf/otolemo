@@ -5,12 +5,18 @@ import TranscriberCore
 /// 録音開始時の設定。
 struct SessionConfiguration: Sendable {
     var title: String
+    var useMicrophone: Bool
     var microphoneUID: String?
+    /// 相手側の音声を取得するアプリ。`nil` ならマイクのみ。
+    var target: AudioTargetApp?
     var recognizer: RecognizerKind
     var saveDebugAudio: Bool
 }
 
-/// ライブ画面の状態。音声の取得・認識を開始/停止し、暫定・確定結果を時刻順にまとめる。
+/// ライブ画面の状態。2系統（自分のマイク・相手側アプリ）の取得と認識を開始/停止し、
+/// 暫定・確定結果を会議の時刻順にまとめる。
+///
+/// 系統ごとに独立して開始・失敗・再試行できる。片方が失敗しても、もう片方は続ける。
 @MainActor
 @Observable
 final class LiveSessionModel {
@@ -30,6 +36,7 @@ final class LiveSessionModel {
     private(set) var notices: [AudioSource: String] = [:]
     private(set) var errorMessage: String?
     private(set) var microphoneName: String?
+    private(set) var activeSources: Set<AudioSource> = []
 
     var lines: [TranscriptLine] {
         merger?.lines ?? []
@@ -41,6 +48,7 @@ final class LiveSessionModel {
 
     private let paths: AppPaths
     private let microphone = MicrophoneCapture()
+    private let systemAudio = ProcessAudioCapture()
     private let coordinator = RecognitionCoordinator()
     private var clock: MeetingClock?
     private var configuration: SessionConfiguration?
@@ -57,64 +65,93 @@ final class LiveSessionModel {
         microphone.onFailure = { [weak self] error in
             self?.sourceErrors[.microphone] = error.localizedDescription
         }
+        systemAudio.onNotice = { [weak self] message in
+            self?.notices[.system] = message
+        }
+        systemAudio.onFailure = { [weak self] error in
+            self?.sourceErrors[.system] = error.localizedDescription
+        }
     }
 
     func start(_ configuration: SessionConfiguration) async {
         guard phase == .idle else { return }
+        guard configuration.useMicrophone || configuration.target != nil else {
+            errorMessage = "マイクか相手側のアプリのどちらかを選んでください。"
+            return
+        }
         phase = .starting
         errorMessage = nil
         sourceErrors = [:]
         notices = [:]
         metrics = [:]
         latency = [:]
+        activeSources = []
 
-        if AudioPermissions.microphone == .undetermined {
+        if configuration.useMicrophone, AudioPermissions.microphone == .undetermined {
             _ = await AudioPermissions.requestMicrophone()
         }
 
-        let clock = MeetingClock.startingNow()
-        let meeting = Meeting(title: configuration.title, sourceApp: "マイクのみ", startedAt: .now)
-        self.clock = clock
+        let startedAt = Date.now
+        let title = configuration.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let meeting = Meeting(
+            title: title.isEmpty ? Self.defaultTitle(for: startedAt) : title,
+            sourceApp: configuration.target?.name ?? "マイクのみ",
+            startedAt: startedAt
+        )
+        clock = MeetingClock.startingNow()
         self.configuration = configuration
         self.meeting = meeting
         merger = TranscriptMerger(meetingID: meeting.id, engine: configuration.recognizer.engineIdentifier)
 
-        do {
-            try await startMicrophone()
-        } catch {
-            errorMessage = error.localizedDescription
+        // 相手側を先に開始する（2系統目の認識が資源不足で失敗した場合でも、相手側を優先して残す）。
+        var sources: [AudioSource] = []
+        if configuration.target != nil { sources.append(.system) }
+        if configuration.useMicrophone { sources.append(.microphone) }
+        for source in sources {
+            do {
+                try await startSource(source)
+            } catch {
+                sourceErrors[source] = error.localizedDescription
+            }
+        }
+
+        guard !activeSources.isEmpty else {
+            errorMessage = "音声を取得できませんでした。"
             await tearDown()
             return
         }
         phase = .recording
-        Log.session.info("Session started")
+        Log.session.info("Session started with \(self.activeSources.count, privacy: .public) sources")
     }
 
     func stop() async {
         guard phase == .recording else { return }
         phase = .stopping
         microphone.stop()
-        await coordinator.finish(source: .microphone)
+        systemAudio.stop()
+        async let microphoneDone: Void = coordinator.finish(source: .microphone)
+        async let systemDone: Void = coordinator.finish(source: .system)
+        _ = await (microphoneDone, systemDone)
+        activeSources = []
+        for source in AudioSource.allCases {
+            merger?.clearVolatile(for: source)
+        }
         if var meeting {
             meeting.endedAt = .now
             meeting.status = .completed
             self.meeting = meeting
         }
-        for source in AudioSource.allCases {
-            merger?.clearVolatile(for: source)
-        }
         phase = .idle
         Log.session.info("Session stopped")
     }
 
-    /// エラーで止まった系統をやり直す。
+    /// 失敗した系統をやり直す。
     func retry(_ source: AudioSource) async {
-        guard phase == .recording, source == .microphone else { return }
+        guard phase == .recording else { return }
         sourceErrors[source] = nil
-        microphone.stop()
-        await coordinator.cancel(source: source)
+        await stopSource(source, discardingPending: true)
         do {
-            try await startMicrophone()
+            try await startSource(source)
         } catch {
             sourceErrors[source] = error.localizedDescription
         }
@@ -124,23 +161,53 @@ final class LiveSessionModel {
         notices[source] = nil
     }
 
-    // MARK: - 内部
+    static func defaultTitle(for date: Date) -> String {
+        "会議 " + date.formatted(date: .numeric, time: .shortened)
+    }
 
-    private func startMicrophone() async throws {
+    // MARK: - 系統ごとの開始・停止
+
+    private func startSource(_ source: AudioSource) async throws {
         guard let clock, let configuration, let meeting else { return }
-        let queue = try microphone.start(deviceUID: configuration.microphoneUID)
-        microphoneName = microphone.activeDeviceName
+        let queue: AudioBufferQueue<CaptureEvent>
+        switch source {
+        case .microphone:
+            queue = try microphone.start(deviceUID: configuration.microphoneUID)
+            microphoneName = microphone.activeDeviceName
+        case .system:
+            guard let target = configuration.target else { return }
+            queue = try systemAudio.start(target: target)
+        }
         do {
             try await coordinator.start(
-                source: .microphone,
+                source: source,
                 capture: queue,
                 clock: clock,
                 engine: AppleSpeechEngine(kind: configuration.recognizer),
-                recorder: makeRecorder(for: .microphone, meetingID: meeting.id, enabled: configuration.saveDebugAudio)
+                recorder: makeRecorder(for: source, meetingID: meeting.id, enabled: configuration.saveDebugAudio)
             )
         } catch {
-            microphone.stop()
+            stopCapture(source)
             throw error
+        }
+        activeSources.insert(source)
+    }
+
+    private func stopSource(_ source: AudioSource, discardingPending: Bool) async {
+        stopCapture(source)
+        if discardingPending {
+            await coordinator.cancel(source: source)
+        } else {
+            await coordinator.finish(source: source)
+        }
+        activeSources.remove(source)
+        merger?.clearVolatile(for: source)
+    }
+
+    private func stopCapture(_ source: AudioSource) {
+        switch source {
+        case .microphone: microphone.stop()
+        case .system: systemAudio.stop()
         }
     }
 
@@ -149,6 +216,8 @@ final class LiveSessionModel {
         try? paths.createDirectories()
         return DebugAudioRecorder(directory: paths.debugAudioDirectory, meetingID: meetingID, source: source)
     }
+
+    // MARK: - 結果
 
     private func apply(_ update: TranscriptUpdate) {
         guard merger != nil else { return }
@@ -162,15 +231,17 @@ final class LiveSessionModel {
 
     private func handleRecognitionFailure(_ source: AudioSource, _ error: any Error) {
         sourceErrors[source] = "音声認識が停止しました: \(error.localizedDescription)"
+        stopCapture(source)
+        activeSources.remove(source)
         merger?.clearVolatile(for: source)
-        if source == .microphone {
-            microphone.stop()
-        }
     }
 
     private func tearDown() async {
-        microphone.stop()
-        await coordinator.cancel(source: .microphone)
+        for source in AudioSource.allCases {
+            stopCapture(source)
+            await coordinator.cancel(source: source)
+        }
+        activeSources = []
         meeting = nil
         merger = nil
         phase = .idle

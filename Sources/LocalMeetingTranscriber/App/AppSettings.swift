@@ -7,6 +7,11 @@ import Observation
 final class AppSettings {
     private let defaults: UserDefaults
 
+    /// 自分のマイクも文字起こしする。OFF なら相手側だけ。
+    var useMicrophone: Bool {
+        didSet { defaults.set(useMicrophone, forKey: Keys.useMicrophone) }
+    }
+
     /// 使用するマイクの UID。`nil` ならシステムの既定。
     var microphoneUID: String? {
         didSet { defaults.set(microphoneUID, forKey: Keys.microphoneUID) }
@@ -16,9 +21,9 @@ final class AppSettings {
         didSet { defaults.set(recognizer.rawValue, forKey: Keys.recognizer) }
     }
 
-    /// 前回選んだ相手側アプリの bundle ID。
-    var targetBundleID: String? {
-        didSet { defaults.set(targetBundleID, forKey: Keys.targetBundleID) }
+    /// 前回選んだ相手側アプリ（`AudioTargetApp.id`、通常は bundle ID）。`nil` ならマイクのみ。
+    var targetID: String? {
+        didSet { defaults.set(targetID, forKey: Keys.targetID) }
     }
 
     /// デバッグ用に音声をファイル保存する（既定は OFF）。
@@ -38,9 +43,10 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        useMicrophone = defaults.object(forKey: Keys.useMicrophone) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Keys.microphoneUID)
         recognizer = defaults.string(forKey: Keys.recognizer).flatMap(RecognizerKind.init(rawValue:)) ?? .speechTranscriber
-        targetBundleID = defaults.string(forKey: Keys.targetBundleID)
+        targetID = defaults.string(forKey: Keys.targetID)
         saveDebugAudio = defaults.bool(forKey: Keys.saveDebugAudio)
         let retention = defaults.integer(forKey: Keys.debugAudioRetentionDays)
         debugAudioRetentionDays = retention > 0 ? retention : 7
@@ -48,9 +54,10 @@ final class AppSettings {
     }
 
     private enum Keys {
+        static let useMicrophone = "useMicrophone"
         static let microphoneUID = "microphoneUID"
         static let recognizer = "recognizer"
-        static let targetBundleID = "targetBundleID"
+        static let targetID = "targetID"
         static let saveDebugAudio = "saveDebugAudio"
         static let debugAudioRetentionDays = "debugAudioRetentionDays"
         static let verboseLogging = "verboseLogging"
