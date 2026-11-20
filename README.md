@@ -60,6 +60,13 @@ Command Line Tools だけの環境では SwiftUI のマクロプラグインが�
 - 会議を選ぶと全文を表示する。タイトルは編集して Return で保存。発言は右クリックで本文の修正・コピー・認識結果に戻すができる。修正しても認識結果は残る。
 - ツールバーから全文コピー、Markdown / JSON への書き出し、保存先の表示、会議の削除（確認あり）ができる。
 
+### 5. 設定（⌘,）
+
+- 入力マイク、認識エンジン（`SpeechTranscriber` / `DictationTranscriber`）、モデル状態。
+- 保存場所の表示、手動バックアップ（`Backups/` に SQLite ファイルを作る）、バックアップからの復元（復元前に現在のデータを自動でバックアップする）。
+- デバッグ用の音声保存（既定 OFF、`DebugAudio/` に会議・系統ごとの CAF を保存）と保存期間・一括削除。
+- 詳細ログ。ON でも音声や文字起こし本文はログに出さない。ログは `log stream --predicate 'subsystem == "io.github.yuuulf.LocalMeetingTranscriber"'` で見られる。
+
 ## テスト
 
 ```sh

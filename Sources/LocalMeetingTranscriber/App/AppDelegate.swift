@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var session = LiveSessionModel(storage: storage)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.setVerbose(settings.verboseLogging)
         Task {
             await storage.recoverUnfinishedMeetings()
         }

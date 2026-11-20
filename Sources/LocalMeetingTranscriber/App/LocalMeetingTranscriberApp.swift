@@ -15,6 +15,13 @@ struct LocalMeetingTranscriberApp: App {
                 .environment(appDelegate.session)
                 .frame(minWidth: 760, minHeight: 520)
         }
+        Settings {
+            SettingsView()
+                .environment(appDelegate.models)
+                .environment(appDelegate.settings)
+                .environment(appDelegate.storage)
+                .environment(appDelegate.session)
+        }
     }
 }
 

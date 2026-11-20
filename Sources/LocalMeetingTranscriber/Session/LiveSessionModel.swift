@@ -278,9 +278,13 @@ final class LiveSessionModel {
     private func apply(_ update: TranscriptUpdate) {
         guard merger != nil else { return }
         if update.isFinal, let clock {
-            latency[update.source, default: LatencyStats()].record(
-                milliseconds: clock.elapsedMillisecondsNow() - update.endMS
-            )
+            let delay = clock.elapsedMillisecondsNow() - update.endMS
+            latency[update.source, default: LatencyStats()].record(milliseconds: delay)
+            if Log.isVerbose {
+                // 本文は出さず、長さと遅延だけを記録する。
+                let dropped = metrics[update.source]?.queue.dropped ?? 0
+                Log.session.info("final \(update.source.rawValue, privacy: .public) len=\(update.text.count, privacy: .public) delay=\(delay, privacy: .public)ms dropped=\(dropped, privacy: .public)")
+            }
         }
         guard let segment = merger?.apply(update), let writer else { return }
         Task {
