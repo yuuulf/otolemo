@@ -16,6 +16,7 @@ rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
 cp "${BIN_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
 cp Resources/Info.plist "${APP_DIR}/Contents/Info.plist"
+cp Resources/AppIcon.icns "${APP_DIR}/Contents/Resources/AppIcon.icns"
 
 # 権限 (TCC) をビルドごとに失わないよう、アドホック署名で識別子を固定する。
 codesign --force --sign - --identifier "io.github.yuuulf.Otolemo" "${APP_DIR}"
