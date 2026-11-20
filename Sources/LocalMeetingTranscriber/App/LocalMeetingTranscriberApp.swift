@@ -3,24 +3,24 @@ import TranscriberCore
 
 @main
 struct LocalMeetingTranscriberApp: App {
-    @ViewState private var models = SpeechModelManager()
-    @ViewState private var network = NetworkStatus()
-    @ViewState private var settings = AppSettings()
-    @ViewState private var session = LiveSessionModel(paths: .standard)
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup("Local Meeting Transcriber") {
             RootView()
-                .environment(models)
-                .environment(network)
-                .environment(settings)
-                .environment(session)
+                .environment(appDelegate.models)
+                .environment(appDelegate.network)
+                .environment(appDelegate.settings)
+                .environment(appDelegate.storage)
+                .environment(appDelegate.session)
                 .frame(minWidth: 760, minHeight: 520)
         }
     }
 }
 
 struct RootView: View {
+    @Environment(StorageModel.self) private var storage
+
     var body: some View {
         TabView {
             Tab("ライブ", systemImage: "waveform") {
@@ -32,6 +32,14 @@ struct RootView: View {
                 NavigationStack {
                     DiagnosticsView()
                 }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let error = storage.openError {
+                Label(error, systemImage: "externaldrive.badge.exclamationmark")
+                    .padding()
+                    .background(.red.opacity(0.15), in: .rect(cornerRadius: 8))
+                    .padding()
             }
         }
     }

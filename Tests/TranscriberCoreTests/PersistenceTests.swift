@@ -254,3 +254,50 @@ struct DateCodingTests {
         #expect(try DateCoding.date(from: DateCoding.string(from: date)).timeIntervalSince1970 == 1_795_000_062.3)
     }
 }
+
+struct SegmentWriterTests {
+    @Test func writesEverySegmentEvenWhenEnqueuedConcurrently() async throws {
+        let repository = try MeetingRepository(url: nil)
+        let meeting = Meeting(title: "並行", sourceApp: "Zoom", startedAt: .now)
+        try await repository.createMeeting(meeting)
+        let writer = SegmentWriter(repository: repository)
+
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<200 {
+                group.addTask {
+                    let source: AudioSource = index.isMultiple(of: 2) ? .microphone : .system
+                    let segment = TranscriptSegment(
+                        meetingID: meeting.id,
+                        source: source,
+                        startMS: Int64(index * 100),
+                        endMS: Int64(index * 100 + 50),
+                        originalText: "発言\(index)",
+                        engine: "test"
+                    )
+                    await writer.enqueue(segment)
+                }
+            }
+        }
+        #expect(await writer.flush())
+        #expect(await writer.writtenCount == 200)
+        let stored = try await repository.segments(meetingID: meeting.id)
+        #expect(stored.count == 200)
+        #expect(stored.map(\.startMS) == (0..<200).map { Int64($0 * 100) })
+    }
+
+    @Test func keepsFailedSegmentsForRetry() async throws {
+        let repository = try MeetingRepository(url: nil)
+        let writer = SegmentWriter(repository: repository)
+        let meeting = Meeting(title: "後から作る", sourceApp: "Zoom", startedAt: .now)
+        let segment = TranscriptSegment(meetingID: meeting.id, source: .system, startMS: 0, endMS: 10, originalText: "a", engine: "test")
+
+        // 会議がまだ無いので外部キー制約で失敗する。
+        #expect(await writer.enqueue(segment) == false)
+        #expect(await writer.pendingCount == 1)
+        #expect(await writer.failureCount == 1)
+
+        try await repository.createMeeting(meeting)
+        #expect(await writer.flush())
+        #expect(try await repository.segmentCount(meetingID: meeting.id) == 1)
+    }
+}

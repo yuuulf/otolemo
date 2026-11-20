@@ -93,6 +93,14 @@ struct LiveView: View {
             if let message = session.errorMessage {
                 ErrorRow(message: message, retry: nil)
             }
+            if let message = session.saveError {
+                ErrorRow(message: message, retry: nil)
+            }
+            if session.phase == .idle, let meeting = session.meeting, meeting.status == .completed {
+                Label("「\(meeting.title)」を保存しました（確定した発言 \(session.savedCount) 件）。履歴タブで読み返せます。", systemImage: "checkmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             if session.activeSources.contains(.system), let silent = session.metrics[.system]?.silentSeconds, silent > 30 {
                 Label("相手側の音声が \(Int(silent)) 秒以上無音です。対象アプリと「画面収録とシステムオーディオ録音」の許可を確認してください。", systemImage: "speaker.slash")
                     .font(.callout)
@@ -112,7 +120,7 @@ struct LiveView: View {
             }
         }
         .padding(.horizontal)
-        .padding(.vertical, session.isRecording || session.errorMessage != nil || !session.sourceErrors.isEmpty ? 8 : 0)
+        .padding(.vertical, 8)
     }
 }
 

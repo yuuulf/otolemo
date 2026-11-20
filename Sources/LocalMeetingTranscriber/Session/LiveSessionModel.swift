@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import TranscriberCore
@@ -17,6 +18,7 @@ struct SessionConfiguration: Sendable {
 /// 暫定・確定結果を会議の時刻順にまとめる。
 ///
 /// 系統ごとに独立して開始・失敗・再試行できる。片方が失敗しても、もう片方は続ける。
+/// 確定した発言だけを SQLite に随時保存する（暫定結果は保存しない）。
 @MainActor
 @Observable
 final class LiveSessionModel {
@@ -37,6 +39,9 @@ final class LiveSessionModel {
     private(set) var errorMessage: String?
     private(set) var microphoneName: String?
     private(set) var activeSources: Set<AudioSource> = []
+    /// 保存に失敗して再試行待ちの発言がある場合のメッセージ。
+    private(set) var saveError: String?
+    private(set) var savedCount = 0
 
     var lines: [TranscriptLine] {
         merger?.lines ?? []
@@ -46,15 +51,17 @@ final class LiveSessionModel {
         phase == .recording
     }
 
-    private let paths: AppPaths
+    private let storage: StorageModel
     private let microphone = MicrophoneCapture()
     private let systemAudio = ProcessAudioCapture()
     private let coordinator = RecognitionCoordinator()
     private var clock: MeetingClock?
     private var configuration: SessionConfiguration?
+    private var writer: SegmentWriter?
+    private var workspaceObservers: [any NSObjectProtocol] = []
 
-    init(paths: AppPaths) {
-        self.paths = paths
+    init(storage: StorageModel) {
+        self.storage = storage
         coordinator.onUpdate = { [weak self] update in self?.apply(update) }
         coordinator.onMetrics = { [weak self] source, metrics in self?.metrics[source] = metrics }
         coordinator.onError = { [weak self] source, error in self?.handleRecognitionFailure(source, error) }
@@ -71,6 +78,7 @@ final class LiveSessionModel {
         systemAudio.onFailure = { [weak self] error in
             self?.sourceErrors[.system] = error.localizedDescription
         }
+        observeSleepAndWake()
     }
 
     func start(_ configuration: SessionConfiguration) async {
@@ -79,8 +87,14 @@ final class LiveSessionModel {
             errorMessage = "マイクか相手側のアプリのどちらかを選んでください。"
             return
         }
+        guard let repository = storage.repository else {
+            errorMessage = storage.openError ?? "データベースを開けません。"
+            return
+        }
         phase = .starting
         errorMessage = nil
+        saveError = nil
+        savedCount = 0
         sourceErrors = [:]
         notices = [:]
         metrics = [:]
@@ -98,6 +112,16 @@ final class LiveSessionModel {
             sourceApp: configuration.target?.name ?? "マイクのみ",
             startedAt: startedAt
         )
+        do {
+            // 音声を取得する前に会議を作る（`recording` 状態）。異常終了しても確定済みの発言は残る。
+            try await repository.createMeeting(meeting)
+        } catch {
+            errorMessage = "会議を保存できませんでした: \(error.localizedDescription)"
+            phase = .idle
+            return
+        }
+        storage.didChange()
+        writer = SegmentWriter(repository: repository)
         clock = MeetingClock.startingNow()
         self.configuration = configuration
         self.meeting = meeting
@@ -117,7 +141,7 @@ final class LiveSessionModel {
 
         guard !activeSources.isEmpty else {
             errorMessage = "音声を取得できませんでした。"
-            await tearDown()
+            await tearDown(deleting: meeting.id)
             return
         }
         phase = .recording
@@ -140,9 +164,28 @@ final class LiveSessionModel {
             meeting.endedAt = .now
             meeting.status = .completed
             self.meeting = meeting
+            await saveEnd(of: meeting)
         }
         phase = .idle
         Log.session.info("Session stopped")
+    }
+
+    /// 残りの発言を保存し、会議を「完了」にする。
+    private func saveEnd(of meeting: Meeting) async {
+        if let writer, await writer.flush() == false {
+            let pending = await writer.pendingCount
+            saveError = "\(pending) 件の発言を保存できませんでした。"
+            Log.storage.error("Failed to flush \(pending, privacy: .public) segments")
+        }
+        do {
+            try await storage.repository?.finishMeeting(id: meeting.id, endedAt: meeting.endedAt ?? .now, status: .completed)
+        } catch {
+            saveError = "会議の終了を保存できませんでした: \(error.localizedDescription)"
+        }
+        if let writer {
+            savedCount = await writer.writtenCount
+        }
+        storage.didChange()
     }
 
     /// 失敗した系統をやり直す。
@@ -159,6 +202,19 @@ final class LiveSessionModel {
 
     func clearNotice(_ source: AudioSource) {
         notices[source] = nil
+    }
+
+    /// 確定済みの発言の本文を修正する（ライブ中・終了後の両方）。
+    func edit(_ segment: TranscriptSegment, text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var edited = segment
+        edited.editedText = trimmed.isEmpty || trimmed == segment.originalText ? nil : trimmed
+        merger?.replace(edited)
+        do {
+            try await storage.repository?.updateEditedText(segmentID: segment.id, editedText: edited.editedText)
+        } catch {
+            saveError = "修正を保存できませんでした: \(error.localizedDescription)"
+        }
     }
 
     static func defaultTitle(for date: Date) -> String {
@@ -213,8 +269,8 @@ final class LiveSessionModel {
 
     private func makeRecorder(for source: AudioSource, meetingID: UUID, enabled: Bool) -> DebugAudioRecorder? {
         guard enabled else { return nil }
-        try? paths.createDirectories()
-        return DebugAudioRecorder(directory: paths.debugAudioDirectory, meetingID: meetingID, source: source)
+        try? storage.paths.createDirectories()
+        return DebugAudioRecorder(directory: storage.paths.debugAudioDirectory, meetingID: meetingID, source: source)
     }
 
     // MARK: - 結果
@@ -226,7 +282,13 @@ final class LiveSessionModel {
                 milliseconds: clock.elapsedMillisecondsNow() - update.endMS
             )
         }
-        merger?.apply(update)
+        guard let segment = merger?.apply(update), let writer else { return }
+        Task {
+            let saved = await writer.enqueue(segment)
+            let pending = await writer.pendingCount
+            savedCount = await writer.writtenCount
+            saveError = saved ? nil : "\(pending) 件の発言が保存待ちです（自動で再試行します）。"
+        }
     }
 
     private func handleRecognitionFailure(_ source: AudioSource, _ error: any Error) {
@@ -236,14 +298,51 @@ final class LiveSessionModel {
         merger?.clearVolatile(for: source)
     }
 
-    private func tearDown() async {
+    /// 開始に失敗したときの後始末。何も記録していない会議は消す。
+    private func tearDown(deleting meetingID: UUID) async {
         for source in AudioSource.allCases {
             stopCapture(source)
             await coordinator.cancel(source: source)
         }
+        try? await storage.repository?.deleteMeeting(id: meetingID)
+        storage.didChange()
         activeSources = []
         meeting = nil
         merger = nil
+        writer = nil
         phase = .idle
+    }
+
+    // MARK: - スリープ
+
+    /// スリープ中は音声が届かない。復帰したら、動いていた系統を作り直す（確定済みの結果は保持）。
+    private func observeSleepAndWake() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.phase == .recording else { return }
+                Log.session.info("System will sleep during recording")
+                self.notices[.microphone] = "スリープ中は記録が止まります"
+            }
+        })
+        workspaceObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.phase == .recording else { return }
+                Task { await self.restartAfterWake() }
+            }
+        })
+    }
+
+    private func restartAfterWake() async {
+        Log.session.info("Restarting sources after wake")
+        for source in activeSources.sorted(by: { $0.rawValue > $1.rawValue }) {
+            await stopSource(source, discardingPending: false)
+            do {
+                try await startSource(source)
+                notices[source] = "スリープから復帰し、記録を再開しました"
+            } catch {
+                sourceErrors[source] = error.localizedDescription
+            }
+        }
     }
 }
