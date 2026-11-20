@@ -8,6 +8,8 @@
 	<string>Otolemo</string>
 	<key>CFBundleExecutable</key>
 	<string>Otolemo</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.yuuulf.Otolemo</string>
 	<key>CFBundleInfoDictionaryVersion</key>

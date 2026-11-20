@@ -17,6 +17,8 @@ open build/Otolemo.app
 
 マイクと音声キャプチャの権限は `.app` として起動したときに求められる。`swift run` だとターミナル側の権限で動くため、権限確認には使わない。
 
+アプリアイコンは `Resources/AppIcon.icns`。元のロゴは `Resources/AppIcon/`（ライト版・ダーク版）にあり、差し替えたら `scripts/make-icon.sh`（ダーク版なら `scripts/make-icon.sh dark`）で作り直してコミットする。macOS のアイコン形状（角丸四角形と余白）に整えて書き出す。ダーク/ライトでの自動切り替えには Xcode の `actool` が必要なため、今は 1 種類だけ使う。
+
 Command Line Tools だけの環境では SwiftUI のマクロプラグインが無く `@State` が使えないため、コードでは別名の `@ViewState` を使っている。
 
 ## 使い方
