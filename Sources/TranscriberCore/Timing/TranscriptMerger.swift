@@ -54,20 +54,22 @@ public struct TranscriptMerger: Sendable {
         self.finalized = finalized.sorted(by: TranscriptSegment.timelineOrder)
     }
 
-    /// 結果を反映する。確定した場合は保存すべき発言を返す。空の確定結果は捨てる。
+    /// 結果を反映する。確定した場合は保存すべき発言を返す。
+    /// 空や句読点・記号だけの結果（雑音やエコーの残りから出やすい）は捨てる。
     @discardableResult
     public mutating func apply(_ update: TranscriptUpdate, now: Date = .now) -> TranscriptSegment? {
         let trimmed = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasContent = Self.hasSpokenContent(trimmed)
 
         guard update.isFinal else {
-            volatile[update.source] = trimmed.isEmpty ? nil : update
+            volatile[update.source] = hasContent ? update : nil
             return nil
         }
 
         if let pending = volatile[update.source], pending.startMS <= update.endMS {
             volatile[update.source] = nil
         }
-        guard !trimmed.isEmpty else { return nil }
+        guard hasContent else { return nil }
 
         let segment = TranscriptSegment(
             meetingID: meetingID,
@@ -80,6 +82,11 @@ public struct TranscriptMerger: Sendable {
         )
         insert(segment)
         return segment
+    }
+
+    /// 文字か数字を1つ以上含むか。
+    static func hasSpokenContent(_ text: String) -> Bool {
+        text.contains { $0.isLetter || $0.isNumber }
     }
 
     /// 系統の認識が止まったときに、残っている暫定結果を捨てる。

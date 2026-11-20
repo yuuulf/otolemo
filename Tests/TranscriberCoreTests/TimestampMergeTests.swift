@@ -134,6 +134,16 @@ struct TranscriptMergerTests {
         #expect(merger.lines.isEmpty)
     }
 
+    @Test func punctuationOnlyResultsAreDropped() {
+        var merger = TranscriptMerger(meetingID: meetingID, engine: "test")
+        merger.apply(update(.microphone, "、", 0, 300, final: false))
+        #expect(merger.lines.isEmpty)
+        let saved = merger.apply(update(.microphone, " 。 ", 0, 300, final: true))
+        #expect(saved == nil)
+        #expect(merger.finalized.isEmpty)
+        #expect(merger.apply(update(.microphone, "3。", 400, 600, final: true)) != nil)
+    }
+
     @Test func volatileLinesFollowFinalLinesAtSameTime() {
         var merger = TranscriptMerger(meetingID: meetingID, engine: "test")
         merger.apply(update(.system, "途中", 1000, 1200, final: false))
