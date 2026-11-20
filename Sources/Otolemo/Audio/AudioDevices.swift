@@ -28,8 +28,4 @@ enum AudioDevices {
     static func device(uid: String) -> AudioObjectID? {
         (try? AudioHardwareSystem.shared.device(forUID: uid))?.id
     }
-
-    static func defaultOutputDeviceUID() -> String? {
-        try? AudioHardwareSystem.shared.defaultOutputDevice?.uid
-    }
 }

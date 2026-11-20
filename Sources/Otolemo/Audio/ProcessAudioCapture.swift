@@ -6,13 +6,15 @@ import TranscriberCore
 
 /// Core Audio Process Tap で、選んだアプリ（Zoom / Chrome など）の出力音声を取得する。
 ///
-/// 構成: Process Tap → 非公開の Aggregate Device → IOProc（専用キュー）→ キュー。
+/// 構成: Process Tap → 非公開の Aggregate Device（タップのみ）→ IOProc（専用キュー）→ キュー。
 /// 取得されるのは対象アプリの出力全体なので、複数人の声や通知音も含まれうる。
 ///
 /// - タップはプロセスオブジェクトの ID で指定する（bundle ID 指定では音声が届かなかったため）。
 /// - Chrome は音声用のヘルパーを後から起動するので、プロセス一覧の変化を監視して
 ///   対象アプリのプロセスが増減したらタップの対象を更新する。アプリの再起動にも追従する。
 /// - 既定の出力デバイスが変わったら作り直す。
+/// - Aggregate Device に出力デバイスを含めない。含めると、同じプロセスでマイクの音声処理
+///   （エコーキャンセル）を有効にしたときに、タップへ音声が届かなくなる。
 @MainActor
 final class ProcessAudioCapture {
     private var tap: AudioHardwareTap?
@@ -91,17 +93,12 @@ final class ProcessAudioCapture {
         }
         formatDescription = "\(Int(format.sampleRate)) Hz / \(format.channelCount) ch"
 
-        guard let outputUID = AudioDevices.defaultOutputDeviceUID() else {
-            throw CaptureError.aggregateDeviceFailed("出力デバイスが見つかりません")
-        }
         let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Otolemo Tap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
             kAudioAggregateDeviceTapListKey: [[
                 kAudioSubTapDriftCompensationKey: true,
                 kAudioSubTapUIDKey: try tap.uid

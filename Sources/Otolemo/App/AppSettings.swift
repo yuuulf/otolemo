@@ -17,6 +17,11 @@ final class AppSettings {
         didSet { defaults.set(microphoneUID, forKey: Keys.microphoneUID) }
     }
 
+    /// マイク入力にエコーキャンセルをかける。スピーカーから出た相手の声を自分の発言として拾わないようにする。
+    var echoCancellation: Bool {
+        didSet { defaults.set(echoCancellation, forKey: Keys.echoCancellation) }
+    }
+
     var recognizer: RecognizerKind {
         didSet { defaults.set(recognizer.rawValue, forKey: Keys.recognizer) }
     }
@@ -45,6 +50,7 @@ final class AppSettings {
         self.defaults = defaults
         useMicrophone = defaults.object(forKey: Keys.useMicrophone) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Keys.microphoneUID)
+        echoCancellation = defaults.object(forKey: Keys.echoCancellation) as? Bool ?? true
         recognizer = defaults.string(forKey: Keys.recognizer).flatMap(RecognizerKind.init(rawValue:)) ?? .speechTranscriber
         targetID = defaults.string(forKey: Keys.targetID)
         saveDebugAudio = defaults.bool(forKey: Keys.saveDebugAudio)
@@ -56,6 +62,7 @@ final class AppSettings {
     private enum Keys {
         static let useMicrophone = "useMicrophone"
         static let microphoneUID = "microphoneUID"
+        static let echoCancellation = "echoCancellation"
         static let recognizer = "recognizer"
         static let targetID = "targetID"
         static let saveDebugAudio = "saveDebugAudio"

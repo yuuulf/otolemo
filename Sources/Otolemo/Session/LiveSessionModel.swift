@@ -8,6 +8,8 @@ struct SessionConfiguration: Sendable {
     var title: String
     var useMicrophone: Bool
     var microphoneUID: String?
+    /// マイク入力にエコーキャンセルをかける。
+    var echoCancellation = true
     /// 相手側の音声を取得するアプリ。`nil` ならマイクのみ。
     var target: AudioTargetApp?
     var recognizer: RecognizerKind
@@ -219,7 +221,7 @@ final class LiveSessionModel {
         let queue: AudioBufferQueue<CaptureEvent>
         switch source {
         case .microphone:
-            queue = try microphone.start(deviceUID: configuration.microphoneUID)
+            queue = try microphone.start(deviceUID: configuration.microphoneUID, echoCancellation: configuration.echoCancellation)
             microphoneName = microphone.activeDeviceName
         case .system:
             guard let target = configuration.target else { return }

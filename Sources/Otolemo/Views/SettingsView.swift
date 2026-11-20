@@ -26,6 +26,10 @@ struct SettingsView: View {
                         Text(device.name).tag(Optional(device.uid))
                     }
                 }
+                Toggle(isOn: $settings.echoCancellation) {
+                    Text("エコーキャンセル")
+                    Text("スピーカーから出た相手の声を、自分の発言として拾わないようにします。ヘッドフォンなら OFF でも構いません。")
+                }
                 LabeledContent("相手側の対象アプリ") {
                     Text("ライブタブで選びます")
                         .foregroundStyle(.secondary)

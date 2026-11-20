@@ -169,6 +169,7 @@ private struct RecordButton: View {
             title: title,
             useMicrophone: settings.useMicrophone,
             microphoneUID: settings.microphoneUID,
+            echoCancellation: settings.echoCancellation,
             target: target,
             recognizer: settings.recognizer,
             saveDebugAudio: settings.saveDebugAudio

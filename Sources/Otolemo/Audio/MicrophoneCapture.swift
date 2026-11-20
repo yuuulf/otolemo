@@ -27,6 +27,9 @@ enum CaptureError: LocalizedError {
 
 /// AVAudioEngine で自分のマイク音声を取得する。
 ///
+/// エコーキャンセルを有効にすると、macOS の音声処理（Voice Processing）を通す。
+/// スピーカーから出た相手の声がマイクに回り込んでも、自分の発言として認識されにくくなる。
+///
 /// タップのコールバックではバッファをコピーしてキューに積むだけにする。
 /// デバイスの抜き差しなどで構成が変わったら、自動で入力を作り直す。
 @MainActor
@@ -34,6 +37,7 @@ final class MicrophoneCapture {
     private var engine = AVAudioEngine()
     private var queue: AudioBufferQueue<CaptureEvent>?
     private var preferredDeviceUID: String?
+    private var echoCancellation = true
     private var configurationObserver: (any NSObjectProtocol)?
     /// タップを入れたか。未使用のエンジンで `inputNode` に触れると入力ユニットが初期化されてしまうため。
     private var isTapInstalled = false
@@ -44,13 +48,16 @@ final class MicrophoneCapture {
     var onRestart: ((String) -> Void)?
 
     private(set) var activeDeviceName: String?
+    /// エコーキャンセルが実際に有効になっているか。
+    private(set) var isEchoCancellationActive = false
 
-    func start(deviceUID: String?) throws -> AudioBufferQueue<CaptureEvent> {
+    func start(deviceUID: String?, echoCancellation: Bool) throws -> AudioBufferQueue<CaptureEvent> {
         stop()
         guard AudioPermissions.microphone != .denied else {
             throw CaptureError.microphonePermissionDenied
         }
         preferredDeviceUID = deviceUID
+        self.echoCancellation = echoCancellation
         let queue = AudioBufferQueue<CaptureEvent>(capacity: captureQueueCapacity)
         self.queue = queue
         do {
@@ -73,12 +80,15 @@ final class MicrophoneCapture {
         queue?.finish()
         queue = nil
         activeDeviceName = nil
+        isEchoCancellationActive = false
     }
 
     private func startEngine(queue: AudioBufferQueue<CaptureEvent>) throws {
         // デバイスを切り替えるたびに作り直すと、入力フォーマットの変化に確実に追従できる。
         engine = AVAudioEngine()
         let input = engine.inputNode
+        // 音声処理を有効にすると入力ユニットが差し替わるため、デバイスの選択より先に行う。
+        isEchoCancellationActive = echoCancellation && enableVoiceProcessing(on: input)
         let device = selectDevice(on: input)
         activeDeviceName = device?.name
 
@@ -99,7 +109,7 @@ final class MicrophoneCapture {
             stopEngine()
             throw CaptureError.engineStartFailed(error.localizedDescription)
         }
-        Log.audio.info("Microphone started: \(format.sampleRate, privacy: .public) Hz, \(format.channelCount, privacy: .public) ch")
+        Log.audio.info("Microphone started: \(format.sampleRate, privacy: .public) Hz, \(format.channelCount, privacy: .public) ch, echo cancellation \(self.isEchoCancellationActive, privacy: .public)")
     }
 
     private func stopEngine() {
@@ -107,6 +117,21 @@ final class MicrophoneCapture {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         isTapInstalled = false
+    }
+
+    /// 音声処理（エコーキャンセル・雑音抑制）を有効にする。失敗したら処理なしで続ける。
+    ///
+    /// 有効にすると入力は同じ内容の複数チャンネルになることがあるが、変換時にモノラルへまとめる。
+    /// 既定では他のアプリの音量を下げる（ダッキング）ため、会議の音声が小さくならないよう最小にする。
+    private func enableVoiceProcessing(on input: AVAudioInputNode) -> Bool {
+        do {
+            try input.setVoiceProcessingEnabled(true)
+            input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+            return true
+        } catch {
+            Log.audio.error("Failed to enable voice processing: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 
     /// 指定のマイクを使う。見つからなければシステムの既定の入力を使う。
