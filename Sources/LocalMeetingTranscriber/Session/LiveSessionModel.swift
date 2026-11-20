@@ -58,6 +58,8 @@ final class LiveSessionModel {
     private var clock: MeetingClock?
     private var configuration: SessionConfiguration?
     private var writer: SegmentWriter?
+    /// 確定発言の保存を直列につないだ最後のタスク。停止時にこれを待ってから flush する。
+    private var lastSave: Task<Void, Never>?
     private var workspaceObservers: [any NSObjectProtocol] = []
 
     init(storage: StorageModel) {
@@ -172,6 +174,8 @@ final class LiveSessionModel {
 
     /// 残りの発言を保存し、会議を「完了」にする。
     private func saveEnd(of meeting: Meeting) async {
+        await lastSave?.value
+        lastSave = nil
         if let writer, await writer.flush() == false {
             let pending = await writer.pendingCount
             saveError = "\(pending) 件の発言を保存できませんでした。"
@@ -274,7 +278,9 @@ final class LiveSessionModel {
             }
         }
         guard let segment = merger?.apply(update), let writer else { return }
-        Task {
+        let previous = lastSave
+        lastSave = Task {
+            await previous?.value
             let saved = await writer.enqueue(segment)
             let pending = await writer.pendingCount
             savedCount = await writer.writtenCount
